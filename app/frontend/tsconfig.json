@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "jsx": "react-jsx",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "paths": {
+      "@backend/*": ["../backend/src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}
