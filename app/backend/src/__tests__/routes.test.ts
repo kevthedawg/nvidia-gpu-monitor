@@ -15,7 +15,7 @@ const validPayload = {
 };
 
 let db: Db;
-let post: (body: unknown) => Promise<Response>;
+let post: (body: unknown) => Response | Promise<Response>;
 
 beforeEach(() => {
   db = freshDb();
@@ -26,7 +26,7 @@ beforeEach(() => {
   });
   app.route("/api", metricsApp);
 
-  post = (body: unknown): Promise<Response> =>
+  post = (body: unknown): Response | Promise<Response> =>
     app.request("/api/metrics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
