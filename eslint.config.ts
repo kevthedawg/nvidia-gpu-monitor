@@ -127,7 +127,7 @@ export const createBaseConfig = ({ tsconfigRootDir }: { tsconfigRootDir: string 
           {
             patterns: [
               {
-                group: ['*.test', '*.spec', '*.test.*', '*.spec.*', '@kevisdev/testing-hono'],
+                group: ['*.test', '*.spec', '*.test.*', '*.spec.*', '*__tests__*', '@kevisdev/testing-hono'],
                 message: 'Production code must not import from test files.',
               },
             ],
