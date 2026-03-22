@@ -1,5 +1,5 @@
 # ── Stage 1: Build frontend ──────────────────────────────────
-FROM node:22-alpine AS frontend-build
+FROM node:alpine AS frontend-build
 
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
@@ -12,7 +12,7 @@ COPY frontend/ ./
 RUN npx vite build
 
 # ── Stage 2: Build backend ───────────────────────────────────
-FROM node:22-alpine AS backend-build
+FROM node:alpine AS backend-build
 
 WORKDIR /build/backend
 COPY backend/package.json backend/package-lock.json ./
@@ -27,7 +27,7 @@ RUN echo '{"compilerOptions":{"strict":true,"esModuleInterop":true,"skipLibCheck
 RUN npm run build
 
 # ── Stage 3: Production image ────────────────────────────────
-FROM node:22-alpine
+FROM node:alpine
 
 WORKDIR /app/backend
 
