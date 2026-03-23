@@ -5,8 +5,6 @@ node_modules/
 dist/
 build/
 
-# Drizzle
-drizzle/
 
 # Environment
 .env
