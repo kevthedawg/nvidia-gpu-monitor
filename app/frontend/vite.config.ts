@@ -11,8 +11,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": "http://localhost:3090",
-      "/trpc": "http://localhost:3090",
+      "/api": process.env.BACKEND_URL ?? "http://localhost:3090",
+      "/trpc": process.env.BACKEND_URL ?? "http://localhost:3090",
     },
   },
 });
