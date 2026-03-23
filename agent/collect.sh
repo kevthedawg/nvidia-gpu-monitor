@@ -67,12 +67,6 @@ while true; do
       processes: $processes
     }')
 
-  # Log payload for debugging (first iteration only)
-  if [ -z "${_LOGGED:-}" ]; then
-    echo "First payload: $payload"
-    _LOGGED=1
-  fi
-
   echo "$payload" | curl -s -X POST "${BACKEND_URL}/api/metrics" \
     -H "Content-Type: application/json" \
     -d @- -o /dev/null --max-time 5 || true

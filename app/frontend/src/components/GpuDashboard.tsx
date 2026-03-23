@@ -1,25 +1,79 @@
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
-import Tab from "@mui/material/Tab";
-import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
-import { useState } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 
 import { trpc } from "../trpc";
 import { MetricCharts } from "./MetricCharts";
-import { ProcessList } from "./ProcessList";
+import { ProcessCharts } from "./ProcessCharts";
 import { StatsCards } from "./StatsCards";
+import { TimeRangePicker } from "./TimeRangePicker";
 
-type TimeRange = "1h" | "6h" | "24h";
+const ONE_HOUR = 60 * 60 * 1000;
 
 export const GpuDashboard = (): React.ReactElement => {
-  const [range, setRange] = useState<TimeRange>("1h");
+  const [from, setFrom] = useState(() => Date.now() - ONE_HOUR);
+  const [to, setTo] = useState(() => Date.now());
+  const [pinToNow, setPinToNow] = useState(true);
+  const [activePreset, setActivePreset] = useState<string | null>("1h");
 
-  const current = trpc.metrics.current.useQuery();
-  const history = trpc.metrics.history.useQuery({ range });
+  // Advance `to` every 5s when pinned to now.
+  // This is the sole polling mechanism — the query key change triggers a refetch.
+  useEffect(() => {
+    if (!pinToNow) return undefined;
+    const id = setInterval(() => {
+      setTo(Date.now());
+    }, 5000);
+    return () => {
+      clearInterval(id);
+    };
+  }, [pinToNow]);
 
-  if (current.isLoading) {
+  const keepPrevious = { placeholderData: keepPreviousData };
+  const history = trpc.metrics.history.useQuery(
+    { start: from, end: to },
+    keepPrevious,
+  );
+  const processHistory = trpc.metrics.processHistory.useQuery(
+    { start: from, end: to },
+    keepPrevious,
+  );
+
+  const handleChange = useCallback((newFrom: number, newTo: number) => {
+    setFrom(newFrom);
+    setTo(newTo);
+    setActivePreset(null);
+  }, []);
+
+  const handlePresetSelect = useCallback((label: string, ms: number) => {
+    setFrom(Date.now() - ms);
+    setTo(Date.now());
+    setPinToNow(true);
+    setActivePreset(label);
+  }, []);
+
+  const handlePinToNowChange = useCallback((pinned: boolean) => {
+    setPinToNow(pinned);
+    if (pinned) {
+      setTo(Date.now());
+    }
+  }, []);
+
+  const historyData = history.data ?? [];
+  const processData = processHistory.data ?? [];
+
+  // Derive current GPU stats from the latest history entries
+  const latestTimestamp =
+    historyData.length > 0
+      ? historyData[historyData.length - 1].timestamp
+      : null;
+  const latestGpus = latestTimestamp
+    ? historyData.filter((d) => d.timestamp === latestTimestamp)
+    : [];
+
+  if (history.isLoading && historyData.length === 0) {
     return (
       <Box display="flex" justifyContent="center" py={8}>
         <CircularProgress />
@@ -27,16 +81,16 @@ export const GpuDashboard = (): React.ReactElement => {
     );
   }
 
-  if (current.error) {
+  if (history.error) {
     return (
       <Alert severity="error">
         {"Failed to connect to backend: "}
-        {current.error.message}
+        {history.error.message}
       </Alert>
     );
   }
 
-  if (!current.data) {
+  if (latestGpus.length === 0) {
     return (
       <Alert severity="info">
         {"No GPU data yet. Waiting for the agent to send metrics..."}
@@ -46,7 +100,7 @@ export const GpuDashboard = (): React.ReactElement => {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      {current.data.gpus.map((gpu) => (
+      {latestGpus.map((gpu) => (
         <Box key={gpu.gpuIndex}>
           <Typography variant="subtitle1" sx={{ mb: 1, opacity: 0.7 }}>
             {"GPU "}
@@ -58,22 +112,23 @@ export const GpuDashboard = (): React.ReactElement => {
         </Box>
       ))}
 
-      <ProcessList processes={current.data.processes} />
+      <TimeRangePicker
+        from={from}
+        to={to}
+        pinToNow={pinToNow}
+        activePreset={activePreset}
+        onChange={handleChange}
+        onPresetSelect={handlePresetSelect}
+        onPinToNowChange={handlePinToNowChange}
+      />
 
-      <Box>
-        <Tabs
-          value={range}
-          onChange={(_, v: TimeRange) => {
-            setRange(v);
-          }}
-          sx={{ mb: 2 }}
-        >
-          <Tab label="1 Hour" value="1h" />
-          <Tab label="6 Hours" value="6h" />
-          <Tab label="24 Hours" value="24h" />
-        </Tabs>
-        <MetricCharts data={history.data ?? []} isLoading={history.isLoading} />
-      </Box>
+      <MetricCharts
+        data={historyData}
+        processData={processData}
+        isLoading={history.isLoading}
+      />
+
+      <ProcessCharts data={processData} from={from} to={to} />
     </Box>
   );
 };

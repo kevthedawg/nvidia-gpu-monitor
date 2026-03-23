@@ -14,9 +14,11 @@
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^7.3.9",
     "@mui/x-charts": "^8.28.0",
+    "@mui/x-date-pickers": "^8.27.2",
     "@tanstack/react-query": "^5.95.0",
     "@trpc/client": "^11.14.1",
     "@trpc/react-query": "^11.14.1",
+    "dayjs": "^1.11.20",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
