@@ -25,7 +25,7 @@ while true; do
 
   gpu_uuids=$(nvidia-smi --query-gpu=index,uuid --format=csv,noheader,nounits)
 
-  jq -n --arg gpu "$gpu" --arg procs "$processes" --arg uuids "$gpu_uuids" '
+  payload=$(jq -n --arg gpu "$gpu" --arg procs "$processes" --arg uuids "$gpu_uuids" '
     # Build index→uuid lookup
     ($uuids | split("\n") | map(select(length > 0)) | map(
       split(", ") | { index: .[0], uuid: .[1] }
@@ -46,7 +46,7 @@ while true; do
 
     # Parse all processes, map UUID back to index
     (
-      if ($procs | length) == 0 or ($procs | contains("No running"))
+      if ($procs | ltrimstr(" ") | length) == 0 or ($procs | test("[Nn]o running|\\[N/A\\]"))
       then []
       else
         $procs | split("\n") | map(select(length > 0)) | map(
@@ -65,10 +65,17 @@ while true; do
     {
       gpus: $gpus,
       processes: $processes
-    }' \
-  | curl -s -X POST "${BACKEND_URL}/api/metrics" \
-      -H "Content-Type: application/json" \
-      -d @- -o /dev/null --max-time 5 || true
+    }')
+
+  # Log payload for debugging (first iteration only)
+  if [ -z "${_LOGGED:-}" ]; then
+    echo "First payload: $payload"
+    _LOGGED=1
+  fi
+
+  echo "$payload" | curl -s -X POST "${BACKEND_URL}/api/metrics" \
+    -H "Content-Type: application/json" \
+    -d @- -o /dev/null --max-time 5 || true
 
   sleep "$INTERVAL"
 done
