@@ -1,18 +1,10 @@
-import { desc, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 
 import type { GpuMetrics, ProcessMetrics } from "../schema.js";
 import type { Db } from "./index.js";
 import { metrics, processes } from "./schema.js";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-
-type TimeRange = "1h" | "6h" | "24h";
-
-const rangeToMs: Record<TimeRange, number> = {
-  "1h": 60 * 60 * 1000,
-  "6h": 6 * 60 * 60 * 1000,
-  "24h": TWENTY_FOUR_HOURS_MS,
-};
 
 export const insertMetrics = (
   db: Db,
@@ -56,56 +48,42 @@ export const insertMetrics = (
   });
 };
 
-export const getLatest = (
-  db: Db,
-): {
-  gpus: (typeof metrics.$inferSelect)[];
-  processes: (typeof processes.$inferSelect)[];
-} | null => {
-  const latestTimestamp = db
-    .select({ timestamp: metrics.timestamp })
-    .from(metrics)
-    .orderBy(desc(metrics.timestamp))
-    .limit(1)
-    .get();
-
-  if (!latestTimestamp) {
-    return null;
-  }
-
-  const gpuRows = db
-    .select()
-    .from(metrics)
-    .where(sql`${metrics.timestamp} = ${latestTimestamp.timestamp}`)
-    .all();
-
-  const metricIds = gpuRows.map((r) => r.id);
-  const processRows =
-    metricIds.length > 0
-      ? db
-          .select()
-          .from(processes)
-          .where(inArray(processes.metricId, metricIds))
-          .all()
-      : [];
-
-  return { gpus: gpuRows, processes: processRows };
-};
-
 export const getHistory = (
   db: Db,
-  range: TimeRange,
-): (typeof metrics.$inferSelect)[] => {
-  const ms = rangeToMs[range];
-  const since = Date.now() - ms;
-
-  return db
+  start: number,
+  end: number,
+): (typeof metrics.$inferSelect)[] =>
+  db
     .select()
     .from(metrics)
-    .where(gte(metrics.timestamp, since))
+    .where(and(gte(metrics.timestamp, start), lte(metrics.timestamp, end)))
     .orderBy(metrics.timestamp)
     .all();
-};
+
+export const getProcessHistory = (
+  db: Db,
+  start: number,
+  end: number,
+): {
+  timestamp: number;
+  gpuIndex: number;
+  pid: number;
+  processName: string;
+  usedMemory: number;
+}[] =>
+  db
+    .select({
+      timestamp: metrics.timestamp,
+      gpuIndex: processes.gpuIndex,
+      pid: processes.pid,
+      processName: processes.processName,
+      usedMemory: processes.usedMemory,
+    })
+    .from(processes)
+    .innerJoin(metrics, eq(processes.metricId, metrics.id))
+    .where(and(gte(metrics.timestamp, start), lte(metrics.timestamp, end)))
+    .orderBy(metrics.timestamp)
+    .all();
 
 export const purgeOld = (db: Db): void => {
   const cutoff = Date.now() - TWENTY_FOUR_HOURS_MS;

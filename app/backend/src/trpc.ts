@@ -2,7 +2,7 @@ import { initTRPC } from "@trpc/server";
 import { z } from "zod";
 
 import type { Db } from "./db/index.js";
-import { getHistory, getLatest } from "./db/queries.js";
+import { getHistory, getProcessHistory } from "./db/queries.js";
 
 export interface TrpcContext {
   db: Db;
@@ -10,15 +10,20 @@ export interface TrpcContext {
 
 const t = initTRPC.context<TrpcContext>().create();
 
+const timeRangeInput = z.object({
+  start: z.number().int(),
+  end: z.number().int(),
+});
+
 export const appRouter = t.router({
   metrics: t.router({
-    current: t.procedure.query(({ ctx }) => {
-      return getLatest(ctx.db);
+    history: t.procedure.input(timeRangeInput).query(({ ctx, input }) => {
+      return getHistory(ctx.db, input.start, input.end);
     }),
-    history: t.procedure
-      .input(z.object({ range: z.enum(["1h", "6h", "24h"]) }))
+    processHistory: t.procedure
+      .input(timeRangeInput)
       .query(({ ctx, input }) => {
-        return getHistory(ctx.db, input.range);
+        return getProcessHistory(ctx.db, input.start, input.end);
       }),
   }),
 });

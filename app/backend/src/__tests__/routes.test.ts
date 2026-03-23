@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Db } from "../db/index.js";
-import { getLatest } from "../db/queries.js";
+import { getHistory, getProcessHistory } from "../db/queries.js";
 import { metricsApp } from "../routes.js";
 import { atTime, FIXTURES, freshDb } from "./helpers.js";
 
@@ -16,6 +16,9 @@ const validPayload = {
 
 let db: Db;
 let post: (body: unknown) => Response | Promise<Response>;
+
+const now = (): number => Date.now();
+const oneHourAgo = (): number => now() - 60 * 60 * 1000;
 
 beforeEach(() => {
   db = freshDb();
@@ -39,9 +42,11 @@ describe("POST /api/metrics", () => {
     const res = await post(validPayload);
     expect(res.status).toBe(200);
 
-    const latest = getLatest(db);
-    expect(latest?.gpus).toHaveLength(1);
-    expect(latest?.processes).toHaveLength(1);
+    const history = getHistory(db, oneHourAgo(), now());
+    expect(history).toHaveLength(1);
+
+    const processes = getProcessHistory(db, oneHourAgo(), now());
+    expect(processes).toHaveLength(1);
   });
 
   it("returns 400 with error status for invalid payload", async () => {
@@ -54,19 +59,19 @@ describe("POST /api/metrics", () => {
 
   it("does not store anything on invalid payload", async () => {
     await post({ foo: "bar" });
-    expect(getLatest(db)).toBeNull();
+    expect(getHistory(db, oneHourAgo(), now())).toHaveLength(0);
   });
 
-  it("latest reflects the most recent POST", async () => {
+  it("most recent POST is reflected in history", async () => {
     await post(validPayload);
 
-    // Insert directly so we control the timestamp without async mock issues
     const { insertMetrics } = await import("../db/queries.js");
     atTime(Date.now() + 10_000, () => {
       insertMetrics(db, [{ ...gpu, gpuUtil: 50 }], []);
     });
 
-    const latest = getLatest(db);
-    expect(latest?.gpus[0].gpuUtil).toBe(50);
+    const history = getHistory(db, oneHourAgo(), now() + 20_000);
+    expect(history).toHaveLength(2);
+    expect(history[1].gpuUtil).toBe(50);
   });
 });
