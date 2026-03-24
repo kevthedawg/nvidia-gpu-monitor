@@ -6,6 +6,8 @@ import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 
 const PRESETS = [
+  { label: "1m", ms: 60 * 1000 },
+  { label: "5m", ms: 5 * 60 * 1000 },
   { label: "15m", ms: 15 * 60 * 1000 },
   { label: "30m", ms: 30 * 60 * 1000 },
   { label: "1h", ms: 60 * 60 * 1000 },

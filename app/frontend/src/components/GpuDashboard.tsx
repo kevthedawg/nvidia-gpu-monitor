@@ -3,8 +3,9 @@ import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Typography from "@mui/material/Typography";
 import { keepPreviousData } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
+import { useTimeRangeParams } from "../lib/hooks/useTimeRangeParams";
 import { trpc } from "../trpc";
 import { getTimestamps } from "./charts/helpers";
 import { MetricCharts } from "./MetricCharts";
@@ -12,88 +13,60 @@ import { ProcessCharts } from "./ProcessCharts";
 import { StatsCards } from "./StatsCards";
 import { TimeRangePicker } from "./TimeRangePicker";
 
-const ONE_HOUR = 60 * 60 * 1000;
 const POLL_INTERVAL = 5000;
-const LATEST_WINDOW = 30 * 1000; // 30s window to catch the most recent reading
+const LATEST_WINDOW = 30 * 1000;
 
 export const GpuDashboard = (): React.ReactElement => {
-  const [from, setFrom] = useState(() => Date.now() - ONE_HOUR);
-  const [to, setTo] = useState(() => Date.now());
-  const [pinToNow, setPinToNow] = useState(true);
-  const [activePreset, setActivePreset] = useState<string | null>("1h");
+  const timeRange = useTimeRangeParams();
   const [now, setNow] = useState(() => Date.now());
 
   // Poll for current stats only when charts are viewing a historical range
   useEffect(() => {
-    if (pinToNow) return undefined;
+    if (timeRange.pinToNow) return undefined;
     const id = setInterval(() => {
       setNow(Date.now());
     }, POLL_INTERVAL);
     return () => {
       clearInterval(id);
     };
-  }, [pinToNow]);
+  }, [timeRange.pinToNow]);
 
   // When pinned to now, chart `to` follows the clock
+  const { setTo } = timeRange;
   useEffect(() => {
-    if (!pinToNow) return undefined;
+    if (!timeRange.pinToNow) return undefined;
     const id = setInterval(() => {
       setTo(Date.now());
     }, POLL_INTERVAL);
     return () => {
       clearInterval(id);
     };
-  }, [pinToNow]);
+  }, [timeRange.pinToNow, setTo]);
 
-  // Only poll separately when unpinned (charts are showing a historical range)
+  // Only poll separately when unpinned
   const latestQuery = trpc.metrics.history.useQuery(
     { start: now - LATEST_WINDOW, end: now },
-    { enabled: !pinToNow, placeholderData: keepPreviousData },
+    { enabled: !timeRange.pinToNow, placeholderData: keepPreviousData },
   );
 
   const keepPrevious = { placeholderData: keepPreviousData };
   const history = trpc.metrics.history.useQuery(
-    { start: from, end: to },
+    { start: timeRange.from, end: timeRange.to },
     keepPrevious,
   );
   const processHistory = trpc.metrics.processHistory.useQuery(
-    { start: from, end: to },
+    { start: timeRange.from, end: timeRange.to },
     keepPrevious,
   );
-
-  const handleChange = useCallback((newFrom: number, newTo: number) => {
-    setFrom(newFrom);
-    setTo(newTo);
-    setActivePreset(null);
-  }, []);
-
-  const handlePresetSelect = useCallback((label: string, ms: number) => {
-    setFrom(Date.now() - ms);
-    setTo(Date.now());
-    setPinToNow(true);
-    setActivePreset(label);
-  }, []);
-
-  const handlePinToNowChange = useCallback((pinned: boolean) => {
-    setPinToNow(pinned);
-    if (pinned) {
-      setTo(Date.now());
-    }
-  }, []);
-
-  const handleRangeSelect = useCallback((fromMs: number, toMs: number) => {
-    setFrom(Math.round(fromMs));
-    setTo(Math.round(toMs));
-    setPinToNow(false);
-    setActivePreset(null);
-  }, []);
 
   const historyData = history.data ?? [];
   const processData = processHistory.data ?? [];
   const timestamps = getTimestamps(historyData);
 
   // When pinned, history already contains latest data. When unpinned, use separate poll.
-  const statsSource = pinToNow ? historyData : (latestQuery.data ?? []);
+  const statsSource = timeRange.pinToNow
+    ? historyData
+    : (latestQuery.data ?? []);
   const latestTimestamp =
     statsSource.length > 0
       ? statsSource[statsSource.length - 1].timestamp
@@ -102,7 +75,6 @@ export const GpuDashboard = (): React.ReactElement => {
     ? statsSource.filter((d) => d.timestamp === latestTimestamp)
     : [];
 
-  // Only show full-page states on initial load
   if (history.error) {
     return (
       <Alert severity="error">
@@ -145,13 +117,13 @@ export const GpuDashboard = (): React.ReactElement => {
       )}
 
       <TimeRangePicker
-        from={from}
-        to={to}
-        pinToNow={pinToNow}
-        activePreset={activePreset}
-        onChange={handleChange}
-        onPresetSelect={handlePresetSelect}
-        onPinToNowChange={handlePinToNowChange}
+        from={timeRange.from}
+        to={timeRange.to}
+        pinToNow={timeRange.pinToNow}
+        activePreset={timeRange.activePreset}
+        onChange={timeRange.setRange}
+        onPresetSelect={timeRange.setPreset}
+        onPinToNowChange={timeRange.setPinToNow}
       />
 
       <MetricCharts
@@ -159,13 +131,13 @@ export const GpuDashboard = (): React.ReactElement => {
         processData={processData}
         timestamps={timestamps}
         isLoading={history.isLoading}
-        onRangeSelect={handleRangeSelect}
+        onRangeSelect={timeRange.setRange}
       />
 
       <ProcessCharts
         data={processData}
         timestamps={timestamps}
-        onRangeSelect={handleRangeSelect}
+        onRangeSelect={timeRange.setRange}
       />
     </Box>
   );

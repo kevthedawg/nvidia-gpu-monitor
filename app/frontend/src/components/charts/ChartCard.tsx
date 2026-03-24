@@ -68,7 +68,15 @@ const downsample = (
 // ── Static legend ──────────────────────────────
 
 const StaticLegend = ({ meta }: { meta: SeriesMeta[] }): React.ReactElement => (
-  <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mt: 1 }}>
+  <Box
+    sx={{
+      display: "flex",
+      gap: 2,
+      flexWrap: "wrap",
+      mt: 1,
+      justifyContent: "center",
+    }}
+  >
     {meta.map((m) => (
       <Box
         key={m.label}
@@ -149,8 +157,8 @@ export const ChartCard = ({
             width: 1.5,
             paths: uPlot.paths.spline?.() ?? undefined,
             points: {
-              fill: m.color,
-              stroke: m.color,
+              fill: m.stroke ?? m.color,
+              stroke: m.stroke ?? m.color,
             },
           }),
         ),
@@ -193,11 +201,14 @@ export const ChartCard = ({
   ]);
 
   return (
-    <Card sx={{ minHeight: 120, height: "30vh", paddingInlineEnd: "2em" }}>
+    <Card sx={{ minHeight: 120, height: "30vh" }}>
       <CardContent
         sx={{ display: "flex", flexDirection: "column", height: "100%" }}
       >
-        <Typography variant="subtitle2" sx={{ mb: 1, opacity: 0.6 }}>
+        <Typography
+          variant="subtitle2"
+          sx={{ mb: 1, opacity: 0.6, textAlign: "center" }}
+        >
           {title}
           {` (${unit})`}
         </Typography>
