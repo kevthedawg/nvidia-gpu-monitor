@@ -1,3 +1,7 @@
+import type uPlot from "uplot";
+
+// ── Types ──────────────────────────────────────
+
 export interface MetricRow {
   timestamp: number;
   gpuIndex: number;
@@ -15,14 +19,16 @@ export interface ProcessRow {
   usedMemory: number;
 }
 
-export interface SeriesItem {
-  data: (number | null)[];
+type StrokeFn = (u: uPlot, seriesIdx: number) => CanvasGradient;
+
+export interface SeriesMeta {
   label: string;
   color: string;
-  area: boolean;
-  showMark: boolean;
-  stack?: string;
+  fill?: string | StrokeFn;
+  stroke?: StrokeFn;
 }
+
+// ── Constants ──────────────────────────────────
 
 export const MB_PER_GB = 1024;
 
@@ -37,59 +43,155 @@ export const PROCESS_COLORS = [
 export const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
   minute: "2-digit",
+  second: "2-digit",
 });
+
+// ── Data builders ──────────────────────────────
+//
+// uPlot expects "aligned data": an array of arrays where:
+//   - index 0 is the shared x-axis (timestamps in seconds)
+//   - index 1..N are the y-values for each series
+//
+// Our backend sends rows with ms timestamps. We:
+//   1. Collect all unique timestamps, sort them, convert to seconds
+//   2. For each series, create a Map of timestamp→value
+//   3. Walk through the sorted timestamps, looking up each value
+//
+// This keeps timestamps as the single source of truth and avoids
+// any floating-point issues from dividing timestamps.
 
 type NumericKey = "gpuUtil" | "memUsed" | "temperature" | "powerDraw";
 
-export const buildSeries = (
-  data: MetricRow[],
-  key: NumericKey,
-  timestamps: number[],
-  gpuIndices: number[],
-  color: string,
-  transform?: (v: number) => number,
-): SeriesItem[] => {
-  const fn = transform ?? ((v: number): number => v);
-  return gpuIndices.map((idx) => {
-    const gpuData = data.filter((d) => d.gpuIndex === idx);
-    const dataMap = new Map(gpuData.map((d) => [d.timestamp, fn(d[key])]));
-    return {
-      data: timestamps.map((t) => dataMap.get(t) ?? null),
-      label: gpuIndices.length > 1 ? `GPU ${String(idx)}` : key,
-      showMark: false,
-      color,
-      area: true,
-    };
-  });
+/**
+ * Get sorted unique timestamps from rows (in seconds for uPlot).
+ */
+export const getTimestamps = (rows: { timestamp: number }[]): number[] => {
+  const unique = [...new Set(rows.map((r) => r.timestamp))];
+  unique.sort((a, b) => a - b);
+  return unique.map((t) => t / 1000);
 };
 
-export const buildVramSeries = (
-  processData: ProcessRow[],
-  timestamps: number[],
-): SeriesItem[] => {
-  const processKeys = [
-    ...new Set(processData.map((p) => `${String(p.pid)}-${p.processName}`)),
-  ];
+/**
+ * Build chart data for a single GPU metric (e.g. temperature, power).
+ *
+ * Input:  rows from the backend, a metric key, and which GPUs to include
+ * Output: columnar data for uPlot + series metadata for labels/colors
+ */
+export const buildMetricData = (
+  rows: MetricRow[],
+  key: NumericKey,
+  gpuIndices: number[],
+  color: string,
+  options?: { transform?: (v: number) => number; timestamps?: number[] },
+): { data: uPlot.AlignedData; meta: SeriesMeta[] } => {
+  const fn = options?.transform ?? ((v: number): number => v);
+  const timestamps = options?.timestamps ?? getTimestamps(rows);
 
-  return processKeys.map((key, i) => {
-    const [pidStr] = key.split("-");
-    const pid = Number(pidStr);
-    const name = key.slice(pidStr.length + 1);
-    const byTimestamp = new Map<number, number>();
+  const meta: SeriesMeta[] = [];
+  const seriesArrays: (number | null)[][] = [];
 
-    for (const p of processData) {
-      if (p.pid === pid && p.processName === name) {
-        byTimestamp.set(p.timestamp, p.usedMemory / MB_PER_GB);
+  for (const gpuIdx of gpuIndices) {
+    // Build a lookup: timestamp (ms) → value
+    const valueByMs = new Map<number, number>();
+    for (const row of rows) {
+      if (row.gpuIndex === gpuIdx) {
+        valueByMs.set(row.timestamp, fn(row[key]));
       }
     }
 
-    return {
-      data: timestamps.map((t) => byTimestamp.get(t) ?? null),
-      label: `${name} (${String(pid)})`,
-      showMark: false,
-      color: PROCESS_COLORS[i % PROCESS_COLORS.length],
-      area: true,
-      stack: "vram",
-    };
-  });
+    // Walk timestamps in order, look up each value
+    const values = timestamps.map((tSec) => {
+      const tMs = Math.round(tSec * 1000);
+      return valueByMs.get(tMs) ?? null;
+    });
+
+    seriesArrays.push(values);
+    meta.push({
+      label: gpuIndices.length > 1 ? `GPU ${String(gpuIdx)}` : key,
+      color,
+      fill: `${color}26`,
+    });
+  }
+
+  return {
+    data: [timestamps, ...seriesArrays],
+    meta,
+  };
+};
+
+/**
+ * Build chart data for per-process VRAM usage over time.
+ *
+ * Each unique process (by pid + name) gets its own series.
+ * Values are in GB (converted from MiB).
+ *
+ * When `stacked` is true, each series value includes the sum of all
+ * previous series — this makes uPlot render a stacked area chart.
+ * The meta also includes `fill` for the area color.
+ */
+export const buildProcessData = (
+  processRows: ProcessRow[],
+  options?: { stacked?: boolean; timestamps?: number[] },
+): { data: uPlot.AlignedData; meta: SeriesMeta[] } => {
+  if (processRows.length === 0) {
+    return { data: [options?.timestamps ?? [], []], meta: [] };
+  }
+
+  const timestamps = options?.timestamps ?? getTimestamps(processRows);
+
+  // Find all unique processes
+  const processMap = new Map<string, { pid: number; name: string }>();
+  for (const row of processRows) {
+    const key = `${String(row.pid)}:${row.processName}`;
+    if (!processMap.has(key)) {
+      processMap.set(key, { pid: row.pid, name: row.processName });
+    }
+  }
+  const uniqueProcesses = [...processMap.values()];
+
+  const meta: SeriesMeta[] = [];
+  const seriesArrays: (number | null)[][] = [];
+
+  for (let i = 0; i < uniqueProcesses.length; i++) {
+    const proc = uniqueProcesses[i];
+    const color = PROCESS_COLORS[i % PROCESS_COLORS.length];
+
+    // Build lookup: timestamp (ms) → VRAM in GB
+    const vramByMs = new Map<number, number>();
+    for (const row of processRows) {
+      if (row.pid === proc.pid && row.processName === proc.name) {
+        vramByMs.set(row.timestamp, row.usedMemory / MB_PER_GB);
+      }
+    }
+
+    const values = timestamps.map((tSec) => {
+      const tMs = Math.round(tSec * 1000);
+      return vramByMs.get(tMs) ?? null;
+    });
+
+    seriesArrays.push(values);
+    meta.push({
+      label: `${proc.name} (${String(proc.pid)})`,
+      color,
+      ...(options?.stacked ? { fill: `${color}26` } : {}),
+    });
+  }
+
+  // Pre-stack: each series becomes the cumulative sum of itself + all prior
+  if (options?.stacked && seriesArrays.length > 1) {
+    for (let s = 1; s < seriesArrays.length; s++) {
+      for (let t = 0; t < timestamps.length; t++) {
+        const prev = seriesArrays[s - 1][t];
+        const curr = seriesArrays[s][t];
+        if (prev !== null && curr !== null) {
+          seriesArrays[s][t] = prev + curr;
+        }
+      }
+    }
+  }
+
+  return {
+    data: [timestamps, ...seriesArrays],
+    meta,
+  };
 };

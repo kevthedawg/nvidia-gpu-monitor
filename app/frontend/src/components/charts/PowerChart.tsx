@@ -1,26 +1,37 @@
-import type { SharedChartProps } from "./ChartCard";
+import type { ChartCardProps } from "./ChartCard";
 import { ChartCard } from "./ChartCard";
 import type { MetricRow } from "./helpers";
-import { buildSeries } from "./helpers";
+import { buildMetricData } from "./helpers";
 
 export const PowerChart = ({
   data,
   gpuIndices,
-  ...shared
-}: SharedChartProps & {
+  timestamps,
+  syncKey,
+  onRangeSelect,
+}: {
   data: MetricRow[];
   gpuIndices: number[];
-}): React.ReactElement => (
-  <ChartCard
-    title="Power Draw"
-    unit="W"
-    series={buildSeries(
-      data,
-      "powerDraw",
-      shared.timestamps,
-      gpuIndices,
-      "#f44336",
-    )}
-    {...shared}
-  />
-);
+  timestamps?: number[];
+  syncKey?: string;
+  onRangeSelect?: ChartCardProps["onRangeSelect"];
+}): React.ReactElement => {
+  const { data: aligned, meta } = buildMetricData(
+    data,
+    "powerDraw",
+    gpuIndices,
+    "#f44336",
+    { timestamps },
+  );
+
+  return (
+    <ChartCard
+      title="Power Draw"
+      unit="W"
+      data={aligned}
+      meta={meta}
+      syncKey={syncKey}
+      onRangeSelect={onRangeSelect}
+    />
+  );
+};

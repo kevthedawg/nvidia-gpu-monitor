@@ -1,7 +1,7 @@
-import type { SharedChartProps } from "./ChartCard";
+import type { ChartCardProps } from "./ChartCard";
 import { ChartCard } from "./ChartCard";
 import type { MetricRow, ProcessRow } from "./helpers";
-import { buildSeries, buildVramSeries, MB_PER_GB } from "./helpers";
+import { buildMetricData, buildProcessData, MB_PER_GB } from "./helpers";
 
 const toGb = (v: number): number => Number((v / MB_PER_GB).toFixed(1));
 
@@ -9,31 +9,40 @@ export const VramChart = ({
   data,
   processData,
   gpuIndices,
-  ...shared
-}: SharedChartProps & {
+  timestamps,
+  syncKey,
+  onRangeSelect,
+}: {
   data: MetricRow[];
   processData: ProcessRow[];
   gpuIndices: number[];
+  timestamps?: number[];
+  syncKey?: string;
+  onRangeSelect?: ChartCardProps["onRangeSelect"];
 }): React.ReactElement => {
-  const vramSeries = buildVramSeries(processData, shared.timestamps);
+  // Prefer per-process breakdown when available, fall back to total
+  const processResult = buildProcessData(processData, {
+    stacked: true,
+    timestamps,
+  });
+  const hasProcessData = processResult.meta.length > 0;
+
+  const { data: aligned, meta } = hasProcessData
+    ? processResult
+    : buildMetricData(data, "memUsed", gpuIndices, "#2196f3", {
+        transform: toGb,
+        timestamps,
+      });
 
   return (
     <ChartCard
       title="VRAM Usage"
       unit="GB"
-      series={
-        vramSeries.length > 0
-          ? vramSeries
-          : buildSeries(
-              data,
-              "memUsed",
-              shared.timestamps,
-              gpuIndices,
-              "#2196f3",
-              toGb,
-            )
-      }
-      {...shared}
+      data={aligned}
+      meta={meta}
+      syncKey={syncKey}
+      showLegend
+      onRangeSelect={onRangeSelect}
     />
   );
 };

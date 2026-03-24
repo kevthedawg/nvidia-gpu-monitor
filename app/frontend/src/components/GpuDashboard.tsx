@@ -6,30 +6,50 @@ import { keepPreviousData } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 
 import { trpc } from "../trpc";
+import { getTimestamps } from "./charts/helpers";
 import { MetricCharts } from "./MetricCharts";
 import { ProcessCharts } from "./ProcessCharts";
 import { StatsCards } from "./StatsCards";
 import { TimeRangePicker } from "./TimeRangePicker";
 
 const ONE_HOUR = 60 * 60 * 1000;
+const POLL_INTERVAL = 5000;
+const LATEST_WINDOW = 30 * 1000; // 30s window to catch the most recent reading
 
 export const GpuDashboard = (): React.ReactElement => {
   const [from, setFrom] = useState(() => Date.now() - ONE_HOUR);
   const [to, setTo] = useState(() => Date.now());
   const [pinToNow, setPinToNow] = useState(true);
   const [activePreset, setActivePreset] = useState<string | null>("1h");
+  const [now, setNow] = useState(() => Date.now());
 
-  // Advance `to` every 5s when pinned to now.
-  // This is the sole polling mechanism — the query key change triggers a refetch.
+  // Poll for current stats only when charts are viewing a historical range
   useEffect(() => {
-    if (!pinToNow) return undefined;
+    if (pinToNow) return undefined;
     const id = setInterval(() => {
-      setTo(Date.now());
-    }, 5000);
+      setNow(Date.now());
+    }, POLL_INTERVAL);
     return () => {
       clearInterval(id);
     };
   }, [pinToNow]);
+
+  // When pinned to now, chart `to` follows the clock
+  useEffect(() => {
+    if (!pinToNow) return undefined;
+    const id = setInterval(() => {
+      setTo(Date.now());
+    }, POLL_INTERVAL);
+    return () => {
+      clearInterval(id);
+    };
+  }, [pinToNow]);
+
+  // Only poll separately when unpinned (charts are showing a historical range)
+  const latestQuery = trpc.metrics.history.useQuery(
+    { start: now - LATEST_WINDOW, end: now },
+    { enabled: !pinToNow, placeholderData: keepPreviousData },
+  );
 
   const keepPrevious = { placeholderData: keepPreviousData };
   const history = trpc.metrics.history.useQuery(
@@ -61,26 +81,28 @@ export const GpuDashboard = (): React.ReactElement => {
     }
   }, []);
 
+  const handleRangeSelect = useCallback((fromMs: number, toMs: number) => {
+    setFrom(Math.round(fromMs));
+    setTo(Math.round(toMs));
+    setPinToNow(false);
+    setActivePreset(null);
+  }, []);
+
   const historyData = history.data ?? [];
   const processData = processHistory.data ?? [];
+  const timestamps = getTimestamps(historyData);
 
-  // Derive current GPU stats from the latest history entries
+  // When pinned, history already contains latest data. When unpinned, use separate poll.
+  const statsSource = pinToNow ? historyData : (latestQuery.data ?? []);
   const latestTimestamp =
-    historyData.length > 0
-      ? historyData[historyData.length - 1].timestamp
+    statsSource.length > 0
+      ? statsSource[statsSource.length - 1].timestamp
       : null;
   const latestGpus = latestTimestamp
-    ? historyData.filter((d) => d.timestamp === latestTimestamp)
+    ? statsSource.filter((d) => d.timestamp === latestTimestamp)
     : [];
 
-  if (history.isLoading && historyData.length === 0) {
-    return (
-      <Box display="flex" justifyContent="center" py={8}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
+  // Only show full-page states on initial load
   if (history.error) {
     return (
       <Alert severity="error">
@@ -90,27 +112,37 @@ export const GpuDashboard = (): React.ReactElement => {
     );
   }
 
-  if (latestGpus.length === 0) {
+  if (
+    history.isLoading &&
+    historyData.length === 0 &&
+    latestGpus.length === 0
+  ) {
     return (
-      <Alert severity="info">
-        {"No GPU data yet. Waiting for the agent to send metrics..."}
-      </Alert>
+      <Box display="flex" justifyContent="center" py={8}>
+        <CircularProgress />
+      </Box>
     );
   }
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      {latestGpus.map((gpu) => (
-        <Box key={gpu.gpuIndex}>
-          <Typography variant="subtitle1" sx={{ mb: 1, opacity: 0.7 }}>
-            {"GPU "}
-            {gpu.gpuIndex}
-            {" — "}
-            {gpu.gpuName}
-          </Typography>
-          <StatsCards gpu={gpu} />
-        </Box>
-      ))}
+      {latestGpus.length === 0 ? (
+        <Alert severity="info">
+          {"No GPU data yet. Waiting for the agent to send metrics..."}
+        </Alert>
+      ) : (
+        latestGpus.map((gpu) => (
+          <Box key={gpu.gpuIndex}>
+            <Typography variant="subtitle1" sx={{ mb: 1, opacity: 0.7 }}>
+              {"GPU "}
+              {gpu.gpuIndex}
+              {" — "}
+              {gpu.gpuName}
+            </Typography>
+            <StatsCards gpu={gpu} />
+          </Box>
+        ))
+      )}
 
       <TimeRangePicker
         from={from}
@@ -125,10 +157,16 @@ export const GpuDashboard = (): React.ReactElement => {
       <MetricCharts
         data={historyData}
         processData={processData}
+        timestamps={timestamps}
         isLoading={history.isLoading}
+        onRangeSelect={handleRangeSelect}
       />
 
-      <ProcessCharts data={processData} from={from} to={to} />
+      <ProcessCharts
+        data={processData}
+        timestamps={timestamps}
+        onRangeSelect={handleRangeSelect}
+      />
     </Box>
   );
 };

@@ -34,68 +34,72 @@ export const TimeRangePicker = ({
   onPresetSelect,
   onPinToNowChange,
 }: TimeRangePickerProps): React.ReactElement => (
-  <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
-      {PRESETS.map((p) => (
-        <Chip
-          key={p.label}
-          label={p.label}
-          size="small"
-          variant={activePreset === p.label ? "filled" : "outlined"}
-          color={activePreset === p.label ? "primary" : "default"}
-          onClick={() => {
-            onPresetSelect(p.label, p.ms);
-          }}
-        />
-      ))}
-    </Box>
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-      <DateTimePicker
-        label="From"
-        value={dayjs(from)}
-        onChange={(val: Dayjs | null) => {
-          if (val?.isValid()) {
-            onChange(val.valueOf(), to);
-          }
+  <Box
+    sx={{
+      display: "flex",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 0.75,
+    }}
+  >
+    {PRESETS.map((p) => (
+      <Chip
+        key={p.label}
+        label={p.label}
+        size="small"
+        variant={activePreset === p.label ? "filled" : "outlined"}
+        color={activePreset === p.label ? "primary" : "default"}
+        onClick={() => {
+          onPresetSelect(p.label, p.ms);
         }}
-        maxDateTime={dayjs(to)}
-        slotProps={{ textField: { size: "small" } }}
       />
-      <Typography variant="body2" sx={{ opacity: 0.5 }}>
-        {"to"}
-      </Typography>
-      {pinToNow ? (
+    ))}
+    <Box sx={{ mx: 0.5, opacity: 0.3 }}>{"│"}</Box>
+    <DateTimePicker
+      label="From"
+      value={dayjs(from)}
+      onChange={(val: Dayjs | null) => {
+        if (val?.isValid()) {
+          onChange(val.valueOf(), to);
+        }
+      }}
+      maxDateTime={dayjs(to)}
+      slotProps={{ textField: { size: "small", sx: { width: 200 } } }}
+    />
+    <Typography variant="caption" sx={{ opacity: 0.4 }}>
+      {"—"}
+    </Typography>
+    {pinToNow ? (
+      <Chip
+        label="Current"
+        color="primary"
+        size="small"
+        onDelete={() => {
+          onPinToNowChange(false);
+        }}
+      />
+    ) : (
+      <>
+        <DateTimePicker
+          label="To"
+          value={dayjs(to)}
+          onChange={(val: Dayjs | null) => {
+            if (val?.isValid()) {
+              onChange(from, val.valueOf());
+            }
+          }}
+          minDateTime={dayjs(from)}
+          slotProps={{ textField: { size: "small", sx: { width: 200 } } }}
+        />
         <Chip
           label="Current"
-          color="primary"
+          variant="outlined"
           size="small"
-          onDelete={() => {
-            onPinToNowChange(false);
+          onClick={() => {
+            onPinToNowChange(true);
           }}
         />
-      ) : (
-        <>
-          <DateTimePicker
-            label="To"
-            value={dayjs(to)}
-            onChange={(val: Dayjs | null) => {
-              if (val?.isValid()) {
-                onChange(from, val.valueOf());
-              }
-            }}
-            minDateTime={dayjs(from)}
-            slotProps={{ textField: { size: "small" } }}
-          />
-          <Chip
-            label="Current"
-            variant="outlined"
-            size="small"
-            onClick={() => {
-              onPinToNowChange(true);
-            }}
-          />
-        </>
-      )}
-    </Box>
+      </>
+    )}
   </Box>
 );

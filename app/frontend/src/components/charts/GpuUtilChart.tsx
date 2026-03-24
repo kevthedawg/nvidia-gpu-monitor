@@ -1,26 +1,38 @@
-import type { SharedChartProps } from "./ChartCard";
+import type { ChartCardProps } from "./ChartCard";
 import { ChartCard } from "./ChartCard";
 import type { MetricRow } from "./helpers";
-import { buildSeries } from "./helpers";
+import { buildMetricData } from "./helpers";
 
 export const GpuUtilChart = ({
   data,
   gpuIndices,
-  ...shared
-}: SharedChartProps & {
+  timestamps,
+  syncKey,
+  onRangeSelect,
+}: {
   data: MetricRow[];
   gpuIndices: number[];
-}): React.ReactElement => (
-  <ChartCard
-    title="GPU Utilization"
-    unit="%"
-    series={buildSeries(
-      data,
-      "gpuUtil",
-      shared.timestamps,
-      gpuIndices,
-      "#76b900",
-    )}
-    {...shared}
-  />
-);
+  timestamps?: number[];
+  syncKey?: string;
+  onRangeSelect?: ChartCardProps["onRangeSelect"];
+}): React.ReactElement => {
+  const { data: aligned, meta } = buildMetricData(
+    data,
+    "gpuUtil",
+    gpuIndices,
+    "#76b900",
+    { timestamps },
+  );
+
+  return (
+    <ChartCard
+      title="GPU Utilization"
+      unit="%"
+      data={aligned}
+      meta={meta}
+      scales={{ y: { range: [0, 100] } }}
+      syncKey={syncKey}
+      onRangeSelect={onRangeSelect}
+    />
+  );
+};
