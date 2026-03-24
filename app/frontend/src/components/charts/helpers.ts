@@ -26,6 +26,8 @@ export interface SeriesMeta {
   color: string;
   fill?: string | StrokeFn;
   stroke?: StrokeFn;
+  /** Resolve a hex color from a data value (for dynamic per-point coloring) */
+  colorFromValue?: (val: number) => string;
 }
 
 // ── Constants ──────────────────────────────────

@@ -52,7 +52,12 @@ const TOOLTIP_STYLE: Partial<CSSStyleDeclaration> = {
   whiteSpace: "nowrap",
 };
 
-export const useTooltipPlugin = (seriesColors: string[]): uPlot.Plugin => {
+export const useTooltipPlugin = (
+  seriesColors: string[],
+  colorFromValueFns?: React.RefObject<
+    (((val: number) => string) | undefined)[]
+  >,
+): uPlot.Plugin => {
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const isHoveredRef = useRef(false);
 
@@ -75,8 +80,9 @@ export const useTooltipPlugin = (seriesColors: string[]): uPlot.Plugin => {
         const tip = tooltipRef.current;
         if (!tip) return;
 
-        const { idx, left } = u.cursor;
-        if (idx === undefined || idx === null || left === undefined) {
+        const { idx } = u.cursor;
+        const left = u.cursor.left ?? 0;
+        if (idx === undefined || idx === null) {
           tip.style.display = "none";
           return;
         }
@@ -90,7 +96,10 @@ export const useTooltipPlugin = (seriesColors: string[]): uPlot.Plugin => {
           if (!s.show) continue;
           const val = u.data[i][idx];
           if (val === undefined || val === null) continue;
-          const color = resolveSeriesColor(s, i, seriesColors);
+          const cfvFn = colorFromValueFns?.current[i - 1];
+          const color = cfvFn
+            ? cfvFn(val)
+            : resolveSeriesColor(s, i, seriesColors);
           const label = typeof s.label === "string" ? s.label : "";
           const display = Number.isInteger(val) ? String(val) : val.toFixed(2);
           html += `<div><span style="color:${color}">\u25CF</span> ${label}: <b>${display}</b></div>`;

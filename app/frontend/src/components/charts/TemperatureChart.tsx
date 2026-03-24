@@ -102,6 +102,7 @@ export const TemperatureChart = ({
       buildZoneGradient(u, seriesIdx, ""),
     fill: (u: uPlot, seriesIdx: number) =>
       buildZoneGradient(u, seriesIdx, "26"),
+    colorFromValue: getZoneColor,
   }));
 
   return (

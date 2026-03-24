@@ -138,7 +138,9 @@ export const ChartCard = ({
 
   const colorKey = meta.map((m) => m.color).join(",");
   const seriesColors = useMemo(() => meta.map((m) => m.color), [colorKey]); // eslint-disable-line react-hooks/exhaustive-deps -- stable by color values
-  const tooltipPlugin = useTooltipPlugin(seriesColors);
+  const colorFromValueFns = useRef(meta.map((m) => m.colorFromValue));
+  colorFromValueFns.current = meta.map((m) => m.colorFromValue);
+  const tooltipPlugin = useTooltipPlugin(seriesColors, colorFromValueFns);
   const selectPlugin = useSelectPlugin(onRangeSelectRef);
 
   const options = useMemo((): uPlot.Options => {
@@ -181,9 +183,23 @@ export const ChartCard = ({
         drag: { x: true, y: false, setScale: false },
         sync: syncKey ? { key: syncKey, setSeries: true } : undefined,
         points: {
-          fill: (_u: uPlot, sIdx: number) =>
-            lightenColor(seriesColors[sIdx - 1] ?? "#fff", 0.4),
-          stroke: (_u: uPlot, sIdx: number) => seriesColors[sIdx - 1] ?? "#fff",
+          fill: (u: uPlot, sIdx: number) => {
+            const fn = colorFromValueFns.current[sIdx - 1];
+            if (fn && u.cursor.idx !== null && u.cursor.idx !== undefined) {
+              const val = u.data[sIdx][u.cursor.idx];
+              if (val !== null && val !== undefined)
+                return lightenColor(fn(val), 0.4);
+            }
+            return lightenColor(seriesColors[sIdx - 1] ?? "#fff", 0.4);
+          },
+          stroke: (u: uPlot, sIdx: number) => {
+            const fn = colorFromValueFns.current[sIdx - 1];
+            if (fn && u.cursor.idx !== null && u.cursor.idx !== undefined) {
+              const val = u.data[sIdx][u.cursor.idx];
+              if (val !== null && val !== undefined) return fn(val);
+            }
+            return seriesColors[sIdx - 1] ?? "#fff";
+          },
           size: 8,
         },
       },
