@@ -3,27 +3,36 @@ set -euo pipefail
 
 BACKEND_URL="${BACKEND_URL:?BACKEND_URL environment variable is required}"
 INTERVAL="${INTERVAL:-5}"
+SMI_TIMEOUT="${SMI_TIMEOUT:-10}"
 
 if ! command -v nvidia-smi &>/dev/null; then
   echo "Error: nvidia-smi not found. Ensure NVIDIA drivers are installed and the GPU is passed through to this container." >&2
   exit 1
 fi
 
-if ! nvidia-smi &>/dev/null; then
+if ! timeout "$SMI_TIMEOUT" nvidia-smi &>/dev/null; then
   echo "Error: nvidia-smi failed. Ensure the GPU is accessible from this container." >&2
   exit 1
 fi
 
+# Trap SIGTERM/SIGINT so the container stops cleanly without orphaned nvidia-smi processes
+cleanup() {
+  echo "Shutting down GPU agent..."
+  kill 0 2>/dev/null || true
+  exit 0
+}
+trap cleanup SIGTERM SIGINT
+
 echo "GPU agent started — polling every ${INTERVAL}s, sending to ${BACKEND_URL}"
 
 while true; do
-  gpu=$(nvidia-smi --query-gpu=index,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,name \
-    --format=csv,noheader,nounits)
+  gpu=$(timeout "$SMI_TIMEOUT" nvidia-smi --query-gpu=index,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,name \
+    --format=csv,noheader,nounits 2>/dev/null) || { echo "Warning: nvidia-smi query timed out" >&2; sleep "$INTERVAL"; continue; }
 
-  processes=$(nvidia-smi --query-compute-apps=gpu_uuid,pid,used_gpu_memory,process_name \
+  processes=$(timeout "$SMI_TIMEOUT" nvidia-smi --query-compute-apps=gpu_uuid,pid,used_gpu_memory,process_name \
     --format=csv,noheader,nounits 2>/dev/null || true)
 
-  gpu_uuids=$(nvidia-smi --query-gpu=index,uuid --format=csv,noheader,nounits)
+  gpu_uuids=$(timeout "$SMI_TIMEOUT" nvidia-smi --query-gpu=index,uuid --format=csv,noheader,nounits 2>/dev/null) || { echo "Warning: nvidia-smi uuid query timed out" >&2; sleep "$INTERVAL"; continue; }
 
   payload=$(jq -n --arg gpu "$gpu" --arg procs "$processes" --arg uuids "$gpu_uuids" '
     # Build index→uuid lookup
